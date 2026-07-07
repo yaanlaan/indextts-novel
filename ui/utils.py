@@ -171,29 +171,33 @@ def download_audio(audio_path):
     return None
 
 
-def save_inference_metadata(output_dir, raw_text, prompt_audio_path, sentences, settings=None, emo_ref_path=None):
+def save_inference_metadata(output_dir, raw_text, prompt_audios, sentences, sentence_roles=None, settings=None, emo_ref_path=None):
     metadata = {
         "task_id": os.path.basename(output_dir),
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "total_sentences": len(sentences),
         "settings": settings or {},
         "raw_text": raw_text,
+        "sentence_roles": sentence_roles or [],
+        "prompt_audios": [],
     }
-    
-    with open(os.path.join(output_dir, "metadata.json"), "w", encoding="utf-8") as f:
-        json.dump(metadata, f, ensure_ascii=False, indent=2)
     
     with open(os.path.join(output_dir, "original_text.txt"), "w", encoding="utf-8") as f:
         f.write(raw_text)
     
     with open(os.path.join(output_dir, "sentences.json"), "w", encoding="utf-8") as f:
-        json.dump({"sentences": sentences}, f, ensure_ascii=False, indent=2)
+        json.dump({"sentences": sentences, "sentence_roles": sentence_roles or []}, f, ensure_ascii=False, indent=2)
     
-    if prompt_audio_path and os.path.exists(prompt_audio_path):
-        ext = os.path.splitext(prompt_audio_path)[1]
-        dest_path = os.path.join(output_dir, f"prompt_audio{ext}")
-        shutil.copy2(prompt_audio_path, dest_path)
-        metadata["prompt_audio"] = f"prompt_audio{ext}"
+    if prompt_audios:
+        for i, audio in enumerate(prompt_audios):
+            audio_path = audio.get("path", "")
+            audio_name = audio.get("name", f"角色{i+1}")
+            if audio_path and os.path.exists(audio_path):
+                ext = os.path.splitext(audio_path)[1]
+                dest_name = f"prompt_audio_{i}{ext}"
+                dest_path = os.path.join(output_dir, dest_name)
+                shutil.copy2(audio_path, dest_path)
+                metadata["prompt_audios"].append({"name": audio_name, "path": dest_name})
     
     if emo_ref_path and os.path.exists(emo_ref_path):
         ext = os.path.splitext(emo_ref_path)[1]
@@ -232,6 +236,11 @@ def load_inference_record(task_id):
     if "prompt_audio" in record and record["prompt_audio"]:
         record["prompt_audio"] = os.path.join(output_dir, record["prompt_audio"])
     
+    if "prompt_audios" in record and record["prompt_audios"]:
+        for audio in record["prompt_audios"]:
+            if audio.get("path"):
+                audio["path"] = os.path.join(output_dir, audio["path"])
+    
     if "emo_ref_audio" in record and record["emo_ref_audio"]:
         record["emo_ref_audio"] = os.path.join(output_dir, record["emo_ref_audio"])
     
@@ -246,6 +255,7 @@ def load_inference_record(task_id):
         with open(sentences_path, "r", encoding="utf-8") as f:
             data = json.load(f)
             record["sentences"] = data.get("sentences", [])
+            record["sentence_roles"] = data.get("sentence_roles", [])
     
     progress_path = os.path.join(output_dir, "progress.json")
     if os.path.exists(progress_path):
